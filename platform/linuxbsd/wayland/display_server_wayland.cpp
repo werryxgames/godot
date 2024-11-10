@@ -808,6 +808,8 @@ Size2i DisplayServerWayland::window_get_min_size(DisplayServer::WindowID p_windo
 
 void DisplayServerWayland::window_set_size(const Size2i p_size, DisplayServer::WindowID p_window_id) {
 	// The XDG spec doesn't allow non-interactive resizes.
+	DisplayServerWayland::window_set_min_size(p_size, p_window_id);
+	DisplayServerWayland::window_set_max_size(p_size, p_window_id);
 }
 
 Size2i DisplayServerWayland::window_get_size(DisplayServer::WindowID p_window_id) const {

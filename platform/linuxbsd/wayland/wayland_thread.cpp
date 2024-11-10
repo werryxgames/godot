@@ -3346,7 +3346,8 @@ bool WaylandThread::window_can_set_mode(DisplayServer::WindowID p_window_id, Dis
 			return ws.can_maximize;
 		};
 
-		case DisplayServer::WINDOW_MODE_FULLSCREEN: {
+		case DisplayServer::WINDOW_MODE_FULLSCREEN:
+		case DisplayServer::WINDOW_MODE_EXCLUSIVE_FULLSCREEN: {
 #ifdef LIBDECOR_ENABLED
 			if (ws.libdecor_frame) {
 				return libdecor_frame_has_capability(ws.libdecor_frame, LIBDECOR_ACTION_FULLSCREEN);
@@ -3354,13 +3355,6 @@ bool WaylandThread::window_can_set_mode(DisplayServer::WindowID p_window_id, Dis
 #endif // LIBDECOR_ENABLED
 
 			return ws.can_fullscreen;
-		};
-
-		case DisplayServer::WINDOW_MODE_EXCLUSIVE_FULLSCREEN: {
-			// I'm not really sure but from what I can find Wayland doesn't really have
-			// the concept of exclusive fullscreen.
-			// TODO: Discuss whether to fallback to regular fullscreen or not.
-			return false;
 		};
 	}
 
@@ -3476,7 +3470,8 @@ void WaylandThread::window_try_set_mode(DisplayServer::WindowID p_window_id, Dis
 #endif // LIBDECOR_ENABLED
 		} break;
 
-		case DisplayServer::WINDOW_MODE_FULLSCREEN: {
+		case DisplayServer::WINDOW_MODE_FULLSCREEN:
+		case DisplayServer::WINDOW_MODE_EXCLUSIVE_FULLSCREEN: {
 			if (ws.xdg_toplevel) {
 				xdg_toplevel_set_fullscreen(ws.xdg_toplevel, nullptr);
 			}
@@ -3486,9 +3481,11 @@ void WaylandThread::window_try_set_mode(DisplayServer::WindowID p_window_id, Dis
 				libdecor_frame_set_fullscreen(ws.libdecor_frame, nullptr);
 			}
 #endif // LIBDECOR_ENABLED
-		} break;
 
-		default: {
+			DisplayServer::WindowID id = DisplayServer::MAIN_WINDOW_ID;
+			Size2i size = screen_get_data(id).size;
+			window_set_min_size(id, size);
+			window_set_max_size(id, size);
 		} break;
 	}
 }
