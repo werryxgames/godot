@@ -797,8 +797,8 @@ void fragment() {
 		material_storage->material_set_shader(default_material, default_shader);
 
 		MaterialData *md = static_cast<MaterialData *>(material_storage->material_get_data(default_material, RendererRD::MaterialStorage::SHADER_TYPE_3D));
-		default_shader_rd = shader.version_get_shader(md->shader_data->version, SHADER_VERSION_COLOR_PASS);
-		default_shader_hddagi_rd = shader.version_get_shader(md->shader_data->version, SHADER_VERSION_DEPTH_PASS_WITH_SDF);
+		default_shader_rd = md->shader_data->get_shader_variant(PIPELINE_VERSION_COLOR_PASS, 0, false);
+		default_shader_hddagi_rd = md->shader_data->get_shader_variant(PIPELINE_VERSION_DEPTH_PASS_WITH_SDF, 0, false);
 
 		default_material_shader_ptr = md->shader_data;
 		default_material_uniform_set = md->uniform_set;

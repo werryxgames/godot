@@ -2546,12 +2546,6 @@ void fragment_shader(in SceneData scene_data) {
 			}
 		}
 
-#ifdef NO_IMAGE_ATOMICS
-		imageStore(geom_facing_grid, grid_pos, uvec4(imageLoad(geom_facing_grid, grid_pos).r | facing_bits)); //store facing bits
-#else
-		imageAtomicOr(geom_facing_grid, grid_pos, facing_bits); //store facing bits
-#endif
-
 		if (length(emission) > 0.001) {
 			float lumas[6];
 			vec3 light_total = vec3(0);
