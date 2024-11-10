@@ -539,7 +539,7 @@ private:
 				uint32_t use_normal_and_roughness : 1;
 				uint32_t use_lightmaps : 1;
 				uint32_t use_voxelgi : 1;
-				uint32_t use_sdfgi : 1;
+				uint32_t use_hddagi : 1;
 				uint32_t use_multiview : 1;
 				uint32_t use_16_bit_shadows : 1;
 				uint32_t use_32_bit_shadows : 1;

@@ -2044,7 +2044,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 		RID rp_uniform_set = _setup_render_pass_uniform_set(RENDER_LIST_OPAQUE, nullptr, RID(), samplers);
 
-		bool finish_depth = using_ssao || using_ssil || using_sdfgi || using_voxelgi || ce_pre_opaque_resolved_depth || ce_post_opaque_resolved_depth;
+		bool finish_depth = using_ssao || using_ssil || using_hddagi || using_voxelgi || ce_pre_opaque_resolved_depth || ce_post_opaque_resolved_depth;
 		RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, depth_pass_mode, 0, rb_data.is_null(), p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RS::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, p_render_data->scene_data->view_count, 0, base_specialization);
 		_render_list_with_draw_list(&render_list_params, depth_framebuffer, needs_pre_resolve ? RD::INITIAL_ACTION_LOAD : RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_STORE, needs_pre_resolve ? RD::INITIAL_ACTION_LOAD : RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_STORE, needs_pre_resolve ? Vector<Color>() : depth_pass_clear);
 
@@ -2947,8 +2947,8 @@ void RenderForwardClustered::_render_hddagi(Ref<RenderSceneBuffersRD> p_render_b
 
 	_update_render_base_uniform_set();
 
-	// Indicate pipelines for SDFGI are required.
-	global_pipeline_data_required.use_sdfgi = true;
+	// Indicate pipelines for HDDAGI are required.
+	global_pipeline_data_required.use_hddagi = true;
 
 	PassMode pass_mode = PASS_MODE_SDF;
 	_fill_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode);
@@ -4461,13 +4461,13 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 		_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 	}
 
-	if (p_global.use_sdfgi) {
-		// Depth pass with SDFGI support.
+	if (p_global.use_hddagi) {
+		// Depth pass with HDDAGI support.
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF;
 		pipeline_key.framebuffer_format_id = _get_depth_framebuffer_format_for_pipeline(buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), false, false);
 		_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, false, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 
-		// Depth pass with SDFGI support for an empty framebuffer.
+		// Depth pass with HDDAGI support for an empty framebuffer.
 		pipeline_key.framebuffer_format_id = RD::get_singleton()->framebuffer_format_create_empty();
 		_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, false, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 	}
