@@ -379,3 +379,10 @@ $RECYCLE.BIN/
 *.msp
 *.lnk
 *.generated.props
+
+# Werryx Games secret files
+/compile_templates_debug.sh
+/compile_templates_release.sh
+/crosscompile_windows_templates_debug.sh
+/crosscompile_windows_templates_release.sh
+
