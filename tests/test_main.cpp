@@ -55,6 +55,8 @@
 #include "tests/core/io/test_resource.h"
 #include "tests/core/io/test_stream_peer.h"
 #include "tests/core/io/test_stream_peer_buffer.h"
+#include "tests/core/io/test_tcp_server.h"
+#include "tests/core/io/test_udp_server.h"
 #include "tests/core/io/test_xml_parser.h"
 #include "tests/core/math/test_aabb.h"
 #include "tests/core/math/test_astar.h"
@@ -367,6 +369,9 @@ struct GodotTestCaseListener : public doctest::IReporter {
 #ifdef TOOLS_ENABLED
 		if (EditorSettings::get_singleton()) {
 			EditorSettings::destroy();
+		}
+		if (EditorPaths::get_singleton()) {
+			EditorPaths::free();
 		}
 #endif // TOOLS_ENABLED
 
