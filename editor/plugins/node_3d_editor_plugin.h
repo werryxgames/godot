@@ -38,6 +38,7 @@
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/spin_box.h"
+#include "scene/resources/immediate_mesh.h"
 
 class AcceptDialog;
 class CheckBox;
@@ -61,6 +62,7 @@ class VSeparator;
 class VSplitContainer;
 class ViewportNavigationControl;
 class WorldEnvironment;
+class MeshInstance3D;
 
 class ViewportRotationControl : public Control {
 	GDCLASS(ViewportRotationControl, Control);
@@ -83,6 +85,7 @@ class ViewportRotationControl : public Control {
 	Vector2i orbiting_mouse_start;
 	int orbiting_index = -1;
 	int focused_axis = -2;
+	bool gizmo_activated = false;
 
 	const float AXIS_CIRCLE_RADIUS = 8.0f * EDSCALE;
 
@@ -93,7 +96,6 @@ protected:
 	void _draw_axis(const Axis2D &p_axis);
 	void _get_sorted_axis(Vector<Axis2D> &r_axis);
 	void _update_focus();
-	void _on_mouse_exited();
 	void _process_click(int p_index, Vector2 p_position, bool p_pressed);
 	void _process_drag(Ref<InputEventWithModifiers> p_event, int p_index, Vector2 p_position, Vector2 p_relative_position);
 
@@ -190,10 +192,11 @@ public:
 	};
 
 	enum NavigationScheme {
-		NAVIGATION_GODOT,
-		NAVIGATION_MAYA,
-		NAVIGATION_MODO,
-		NAVIGATION_CUSTOM,
+		NAVIGATION_GODOT = 0,
+		NAVIGATION_MAYA = 1,
+		NAVIGATION_MODO = 2,
+		NAVIGATION_CUSTOM = 3,
+		NAVIGATION_TABLET = 4,
 	};
 
 	enum FreelookNavigationScheme {
@@ -206,6 +209,8 @@ public:
 		NAVIGATION_LEFT_MOUSE,
 		NAVIGATION_MIDDLE_MOUSE,
 		NAVIGATION_RIGHT_MOUSE,
+		NAVIGATION_MOUSE_4,
+		NAVIGATION_MOUSE_5,
 	};
 
 private:
@@ -213,6 +218,16 @@ private:
 	int cpu_time_history_index;
 	double gpu_time_history[FRAME_TIME_HISTORY];
 	int gpu_time_history_index;
+
+	Node *ruler = nullptr;
+	Node3D *ruler_start_point = nullptr;
+	Node3D *ruler_end_point = nullptr;
+	Ref<ImmediateMesh> geometry;
+	MeshInstance3D *ruler_line = nullptr;
+	MeshInstance3D *ruler_line_xray = nullptr;
+	Label *ruler_label = nullptr;
+	Ref<StandardMaterial3D> ruler_material;
+	Ref<StandardMaterial3D> ruler_material_xray;
 
 	int index;
 	ViewType view_type;
@@ -398,6 +413,7 @@ private:
 	// so one cursor is the real cursor, while the other can be an interpolated version.
 	Cursor cursor; // Immediate cursor
 	Cursor camera_cursor; // That one may be interpolated (don't modify this one except for smoothing purposes)
+	Cursor previous_cursor; // Storing previous cursor state for canceling purposes
 
 	void scale_fov(real_t p_fov_offset);
 	void reset_fov();
@@ -621,6 +637,7 @@ public:
 		TOOL_UNLOCK_SELECTED,
 		TOOL_GROUP_SELECTED,
 		TOOL_UNGROUP_SELECTED,
+		TOOL_RULER,
 		TOOL_MAX
 	};
 
@@ -726,7 +743,8 @@ private:
 		MENU_UNLOCK_SELECTED,
 		MENU_GROUP_SELECTED,
 		MENU_UNGROUP_SELECTED,
-		MENU_SNAP_TO_FLOOR
+		MENU_SNAP_TO_FLOOR,
+		MENU_RULER,
 	};
 
 	Button *tool_button[TOOL_MAX];
@@ -996,7 +1014,7 @@ class Node3DEditorPlugin : public EditorPlugin {
 
 public:
 	Node3DEditor *get_spatial_editor() { return spatial_editor; }
-	virtual String get_name() const override { return "3D"; }
+	virtual String get_plugin_name() const override { return "3D"; }
 	bool has_main_screen() const override { return true; }
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;
@@ -1028,8 +1046,6 @@ protected:
 	void _notification(int p_what);
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 	void _draw();
-	void _on_mouse_entered();
-	void _on_mouse_exited();
 	void _process_click(int p_index, Vector2 p_position, bool p_pressed);
 	void _process_drag(int p_index, Vector2 p_position, Vector2 p_relative_position);
 	void _update_navigation();

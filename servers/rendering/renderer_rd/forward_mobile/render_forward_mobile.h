@@ -33,9 +33,7 @@
 
 #include "core/templates/paged_allocator.h"
 #include "servers/rendering/renderer_rd/forward_mobile/scene_shader_forward_mobile.h"
-#include "servers/rendering/renderer_rd/pipeline_cache_rd.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
-#include "servers/rendering/renderer_rd/storage_rd/utilities.h"
 
 #define RB_SCOPE_MOBILE SNAME("mobile")
 
@@ -184,7 +182,7 @@ private:
 		float normal_xform[12];
 		float texture_size[2];
 		float exposure_normalization;
-		float pad;
+		uint32_t flags;
 	};
 
 	struct LightmapCaptureData {
@@ -360,6 +358,7 @@ protected:
 
 	// When changing any of these enums, remember to change the corresponding enums in the shader files as well.
 	enum {
+		INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT = 1 << 2,
 		INSTANCE_DATA_FLAGS_DYNAMIC = 1 << 3,
 		INSTANCE_DATA_FLAGS_NON_UNIFORM_SCALE = 1 << 4,
 		INSTANCE_DATA_FLAG_USE_GI_BUFFERS = 1 << 5,
@@ -528,6 +527,14 @@ protected:
 		forward_id_storage_mobile = memnew(ForwardIDStorageMobile);
 		return forward_id_storage_mobile;
 	}
+
+	struct ForwardIDByMapSort {
+		uint8_t map;
+		RendererRD::ForwardID forward_id;
+		bool operator<(const ForwardIDByMapSort &p_sort) const {
+			return map > p_sort.map;
+		}
+	};
 
 public:
 	static RenderForwardMobile *get_singleton() { return singleton; }

@@ -35,8 +35,6 @@
 #include "core/os/os.h"
 #include "core/version.h"
 
-#include <stdio.h>
-
 Error PackedData::add_pack(const String &p_path, bool p_replace_files, uint64_t p_offset) {
 	for (int i = 0; i < sources.size(); i++) {
 		if (sources[i]->try_open_pack(p_path, p_replace_files, p_offset)) {
@@ -71,7 +69,7 @@ void PackedData::add_path(const String &p_pkg_path, const String &p_path, uint64
 		// Search for directory.
 		PackedDir *cd = root;
 
-		if (simplified_path.contains("/")) { // In a subdirectory.
+		if (simplified_path.contains_char('/')) { // In a subdirectory.
 			Vector<String> ds = simplified_path.get_base_dir().split("/");
 
 			for (int j = 0; j < ds.size(); j++) {
@@ -104,7 +102,7 @@ void PackedData::remove_path(const String &p_path) {
 	// Search for directory.
 	PackedDir *cd = root;
 
-	if (simplified_path.contains("/")) { // In a subdirectory.
+	if (simplified_path.contains_char('/')) { // In a subdirectory.
 		Vector<String> ds = simplified_path.get_base_dir().split("/");
 
 		for (int j = 0; j < ds.size(); j++) {

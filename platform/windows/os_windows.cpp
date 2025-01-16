@@ -45,6 +45,7 @@
 #include "drivers/windows/file_access_windows_pipe.h"
 #include "drivers/windows/ip_windows.h"
 #include "drivers/windows/net_socket_winsock.h"
+#include "drivers/windows/thread_windows.h"
 #include "main/main.h"
 #include "servers/audio_server.h"
 #include "servers/rendering/rendering_server_default.h"
@@ -247,6 +248,10 @@ void OS_Windows::initialize() {
 	error_handlers.errfunc = _error_handler;
 	error_handlers.userdata = this;
 	add_error_handler(&error_handlers);
+#endif
+
+#ifdef THREADS_ENABLED
+	init_thread_win();
 #endif
 
 	FileAccess::make_default<FileAccessWindows>(FileAccess::ACCESS_RESOURCES);
@@ -582,13 +587,71 @@ String OS_Windows::get_distribution_name() const {
 String OS_Windows::get_version() const {
 	RtlGetVersionPtr version_ptr = (RtlGetVersionPtr)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
 	if (version_ptr != nullptr) {
-		RTL_OSVERSIONINFOW fow;
+		RTL_OSVERSIONINFOEXW fow;
 		ZeroMemory(&fow, sizeof(fow));
 		fow.dwOSVersionInfoSize = sizeof(fow);
 		if (version_ptr(&fow) == 0x00000000) {
 			return vformat("%d.%d.%d", (int64_t)fow.dwMajorVersion, (int64_t)fow.dwMinorVersion, (int64_t)fow.dwBuildNumber);
 		}
 	}
+	return "";
+}
+
+String OS_Windows::get_version_alias() const {
+	RtlGetVersionPtr version_ptr = (RtlGetVersionPtr)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
+	if (version_ptr != nullptr) {
+		RTL_OSVERSIONINFOEXW fow;
+		ZeroMemory(&fow, sizeof(fow));
+		fow.dwOSVersionInfoSize = sizeof(fow);
+		if (version_ptr(&fow) == 0x00000000) {
+			String windows_string;
+			if (fow.wProductType != VER_NT_WORKSTATION && fow.dwMajorVersion == 10 && fow.dwBuildNumber >= 26100) {
+				windows_string = "Server 2025";
+			} else if (fow.dwMajorVersion == 10 && fow.dwBuildNumber >= 20348) {
+				// Builds above 20348 correspond to Windows 11 / Windows Server 2022.
+				// Their major version numbers are still 10 though, not 11.
+				if (fow.wProductType != VER_NT_WORKSTATION) {
+					windows_string += "Server 2022";
+				} else {
+					windows_string += "11";
+				}
+			} else if (fow.dwMajorVersion == 10) {
+				if (fow.wProductType != VER_NT_WORKSTATION && fow.dwBuildNumber >= 17763) {
+					windows_string += "Server 2019";
+				} else {
+					if (fow.wProductType != VER_NT_WORKSTATION) {
+						windows_string += "Server 2016";
+					} else {
+						windows_string += "10";
+					}
+				}
+			} else if (fow.dwMajorVersion == 6 && fow.dwMinorVersion == 3) {
+				if (fow.wProductType != VER_NT_WORKSTATION) {
+					windows_string = "Server 2012 R2";
+				} else {
+					windows_string += "8.1";
+				}
+			} else if (fow.dwMajorVersion == 6 && fow.dwMinorVersion == 2) {
+				if (fow.wProductType != VER_NT_WORKSTATION) {
+					windows_string += "Server 2012";
+				} else {
+					windows_string += "8";
+				}
+			} else if (fow.dwMajorVersion == 6 && fow.dwMinorVersion == 1) {
+				if (fow.wProductType != VER_NT_WORKSTATION) {
+					windows_string = "Server 2008 R2";
+				} else {
+					windows_string += "7";
+				}
+			} else {
+				windows_string += "Unknown";
+			}
+			// Windows versions older than 7 cannot run Godot.
+
+			return vformat("%s (build %d)", windows_string, (int64_t)fow.dwBuildNumber);
+		}
+	}
+
 	return "";
 }
 
@@ -1727,7 +1790,7 @@ String OS_Windows::get_environment(const String &p_var) const {
 }
 
 void OS_Windows::set_environment(const String &p_var, const String &p_value) const {
-	ERR_FAIL_COND_MSG(p_var.is_empty() || p_var.contains("="), vformat("Invalid environment variable name '%s', cannot be empty or include '='.", p_var));
+	ERR_FAIL_COND_MSG(p_var.is_empty() || p_var.contains_char('='), vformat("Invalid environment variable name '%s', cannot be empty or include '='.", p_var));
 	Char16String var = p_var.utf16();
 	Char16String value = p_value.utf16();
 	ERR_FAIL_COND_MSG(var.length() + value.length() + 2 > 32767, vformat("Invalid definition for environment variable '%s', cannot exceed 32767 characters.", p_var));
@@ -1735,7 +1798,7 @@ void OS_Windows::set_environment(const String &p_var, const String &p_value) con
 }
 
 void OS_Windows::unset_environment(const String &p_var) const {
-	ERR_FAIL_COND_MSG(p_var.is_empty() || p_var.contains("="), vformat("Invalid environment variable name '%s', cannot be empty or include '='.", p_var));
+	ERR_FAIL_COND_MSG(p_var.is_empty() || p_var.contains_char('='), vformat("Invalid environment variable name '%s', cannot be empty or include '='.", p_var));
 	SetEnvironmentVariableW((LPCWSTR)(p_var.utf16().get_data()), nullptr); // Null to delete.
 }
 
@@ -2151,22 +2214,8 @@ String OS_Windows::get_system_dir(SystemDir p_dir, bool p_shared_storage) const 
 	return path;
 }
 
-String OS_Windows::get_user_data_dir() const {
-	String appname = get_safe_dir_name(GLOBAL_GET("application/config/name"));
-	if (!appname.is_empty()) {
-		bool use_custom_dir = GLOBAL_GET("application/config/use_custom_user_dir");
-		if (use_custom_dir) {
-			String custom_dir = get_safe_dir_name(GLOBAL_GET("application/config/custom_user_dir_name"), true);
-			if (custom_dir.is_empty()) {
-				custom_dir = appname;
-			}
-			return get_data_path().path_join(custom_dir).replace("\\", "/");
-		} else {
-			return get_data_path().path_join(get_godot_dir_name()).path_join("app_userdata").path_join(appname).replace("\\", "/");
-		}
-	}
-
-	return get_data_path().path_join(get_godot_dir_name()).path_join("app_userdata").path_join("[unnamed project]");
+String OS_Windows::get_user_data_dir(const String &p_user_dir) const {
+	return get_data_path().path_join(p_user_dir).replace("\\", "/");
 }
 
 String OS_Windows::get_unique_id() const {
@@ -2278,9 +2327,14 @@ void OS_Windows::add_frame_delay(bool p_can_draw) {
 		target_ticks += dynamic_delay;
 		uint64_t current_ticks = get_ticks_usec();
 
-		// The minimum sleep resolution on windows is 1 ms on most systems.
-		if (current_ticks < (target_ticks - delay_resolution)) {
-			delay_usec((target_ticks - delay_resolution) - current_ticks);
+		if (target_ticks > current_ticks + delay_resolution) {
+			uint64_t delay_time = target_ticks - current_ticks - delay_resolution;
+			// Make sure we always sleep for a multiple of delay_resolution to avoid overshooting.
+			// Refer to: https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-sleep#remarks
+			delay_time = (delay_time / delay_resolution) * delay_resolution;
+			if (delay_time > 0) {
+				delay_usec(delay_time);
+			}
 		}
 		// Busy wait for the remainder of time.
 		while (get_ticks_usec() < target_ticks) {

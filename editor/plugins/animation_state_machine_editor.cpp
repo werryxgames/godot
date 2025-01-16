@@ -30,8 +30,6 @@
 
 #include "animation_state_machine_editor.h"
 
-#include "core/config/project_settings.h"
-#include "core/input/input.h"
 #include "core/io/resource_loader.h"
 #include "core/math/geometry_2d.h"
 #include "core/os/keyboard.h"
@@ -41,10 +39,7 @@
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/animation/animation_blend_tree.h"
-#include "scene/animation/animation_player.h"
-#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
-#include "scene/gui/panel.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/tree.h"
@@ -98,7 +93,7 @@ String AnimationNodeStateMachineEditor::_get_root_playback_path(String &r_node_d
 		while (!is_playable_anodesm_found) {
 			base_path = String("/").join(edited_path);
 			Ref<AnimationNodeStateMachine> anodesm = !edited_path.size() ? Ref<AnimationNode>(tree->get_root_animation_node().ptr()) : tree->get_root_animation_node()->find_node_by_path(base_path);
-			if (!anodesm.is_valid()) {
+			if (anodesm.is_null()) {
 				break;
 			} else {
 				if (anodesm->get_state_machine_type() != AnimationNodeStateMachine::STATE_MACHINE_TYPE_GROUPED) {
@@ -138,7 +133,7 @@ void AnimationNodeStateMachineEditor::_state_machine_gui_input(const Ref<InputEv
 
 	String node_directory;
 	Ref<AnimationNodeStateMachinePlayback> playback = tree->get(_get_root_playback_path(node_directory));
-	if (!playback.is_valid()) {
+	if (playback.is_null()) {
 		return;
 	}
 
@@ -349,7 +344,7 @@ void AnimationNodeStateMachineEditor::_state_machine_gui_input(const Ref<InputEv
 			Ref<AnimationNodeStateMachine> anodesm = node;
 			Ref<AnimationNodeEndState> end_node = node;
 
-			if (state_machine->has_transition(connecting_from, connecting_to_node) && state_machine->can_edit_node(connecting_to_node) && !anodesm.is_valid()) {
+			if (state_machine->has_transition(connecting_from, connecting_to_node) && state_machine->can_edit_node(connecting_to_node) && anodesm.is_null()) {
 				EditorNode::get_singleton()->show_warning(TTR("Transition exists!"));
 				connecting = false;
 			} else {
@@ -691,7 +686,7 @@ bool AnimationNodeStateMachineEditor::_create_submenu(PopupMenu *p_menu, Ref<Ani
 
 			if (ansm == state_machine) {
 				end_menu->add_item(E, nodes_to_connect.size());
-				nodes_to_connect.push_back(AnimationNodeStateMachine::END_NODE);
+				nodes_to_connect.push_back(SceneStringName(End));
 				continue;
 			}
 
@@ -803,7 +798,7 @@ void AnimationNodeStateMachineEditor::_add_menu_type(int p_index) {
 		base_name = type.replace_first("AnimationNode", "");
 	}
 
-	if (!node.is_valid()) {
+	if (node.is_null()) {
 		EditorNode::get_singleton()->show_warning(TTR("This type of node can't be used. Only root nodes are allowed."));
 		return;
 	}
@@ -1241,11 +1236,11 @@ void AnimationNodeStateMachineEditor::_state_machine_draw() {
 
 		state_machine_draw->draw_style_box(node_style, nr.node);
 
-		if (!is_selected && AnimationNodeStateMachine::START_NODE == name) {
+		if (!is_selected && SceneStringName(Start) == name) {
 			Ref<StyleBox> start_style = _adjust_stylebox_opacity(theme_cache.node_frame_start, opacity);
 			state_machine_draw->draw_style_box(start_style, nr.node);
 		}
-		if (!is_selected && AnimationNodeStateMachine::END_NODE == name) {
+		if (!is_selected && SceneStringName(End) == name) {
 			Ref<StyleBox> end_style = _adjust_stylebox_opacity(theme_cache.node_frame_end, opacity);
 			state_machine_draw->draw_style_box(end_style, nr.node);
 		}
@@ -1337,11 +1332,11 @@ void AnimationNodeStateMachineEditor::_state_machine_pos_draw_individual(const S
 	}
 
 	Ref<AnimationNodeStateMachinePlayback> playback = tree->get(AnimationTreeEditor::get_singleton()->get_base_path() + "playback");
-	if (!playback.is_valid() || !playback->is_playing()) {
+	if (playback.is_null() || !playback->is_playing()) {
 		return;
 	}
 
-	if (p_name == AnimationNodeStateMachine::START_NODE || p_name == AnimationNodeStateMachine::END_NODE || p_name.is_empty()) {
+	if (p_name == SceneStringName(Start) || p_name == SceneStringName(End) || p_name.is_empty()) {
 		return;
 	}
 
@@ -1386,7 +1381,7 @@ void AnimationNodeStateMachineEditor::_state_machine_pos_draw_all() {
 	}
 
 	Ref<AnimationNodeStateMachinePlayback> playback = tree->get(AnimationTreeEditor::get_singleton()->get_base_path() + "playback");
-	if (!playback.is_valid() || !playback->is_playing()) {
+	if (playback.is_null() || !playback->is_playing()) {
 		return;
 	}
 
@@ -1618,7 +1613,7 @@ void AnimationNodeStateMachineEditor::_open_editor(const String &p_name) {
 void AnimationNodeStateMachineEditor::_name_edited(const String &p_text) {
 	const String &new_name = p_text;
 
-	ERR_FAIL_COND(new_name.is_empty() || new_name.contains(".") || new_name.contains("/"));
+	ERR_FAIL_COND(new_name.is_empty() || new_name.contains_char('.') || new_name.contains_char('/'));
 
 	if (new_name == prev_name) {
 		return; // Nothing to do.
@@ -1676,7 +1671,7 @@ void AnimationNodeStateMachineEditor::_erase_selected(const bool p_nested_action
 		undo_redo->create_action(TTR("Node Removed"));
 
 		for (int i = 0; i < node_rects.size(); i++) {
-			if (node_rects[i].node_name == AnimationNodeStateMachine::START_NODE || node_rects[i].node_name == AnimationNodeStateMachine::END_NODE) {
+			if (node_rects[i].node_name == SceneStringName(Start) || node_rects[i].node_name == SceneStringName(End)) {
 				continue;
 			}
 
@@ -1736,7 +1731,7 @@ void AnimationNodeStateMachineEditor::_update_mode() {
 	if (tool_select->is_pressed()) {
 		selection_tools_hb->show();
 		bool nothing_selected = selected_nodes.is_empty() && selected_transition_from == StringName() && selected_transition_to == StringName();
-		bool start_end_selected = selected_nodes.size() == 1 && (*selected_nodes.begin() == AnimationNodeStateMachine::START_NODE || *selected_nodes.begin() == AnimationNodeStateMachine::END_NODE);
+		bool start_end_selected = selected_nodes.size() == 1 && (*selected_nodes.begin() == SceneStringName(Start) || *selected_nodes.begin() == SceneStringName(End));
 		tool_erase->set_disabled(nothing_selected || start_end_selected || read_only);
 	} else {
 		selection_tools_hb->hide();
@@ -1821,7 +1816,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	bg.instantiate();
 
 	tool_select = memnew(Button);
-	tool_select->set_theme_type_variation("FlatButton");
+	tool_select->set_theme_type_variation(SceneStringName(FlatButton));
 	top_hb->add_child(tool_select);
 	tool_select->set_toggle_mode(true);
 	tool_select->set_button_group(bg);
@@ -1830,7 +1825,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	tool_select->connect(SceneStringName(pressed), callable_mp(this, &AnimationNodeStateMachineEditor::_update_mode), CONNECT_DEFERRED);
 
 	tool_create = memnew(Button);
-	tool_create->set_theme_type_variation("FlatButton");
+	tool_create->set_theme_type_variation(SceneStringName(FlatButton));
 	top_hb->add_child(tool_create);
 	tool_create->set_toggle_mode(true);
 	tool_create->set_button_group(bg);
@@ -1838,7 +1833,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	tool_create->connect(SceneStringName(pressed), callable_mp(this, &AnimationNodeStateMachineEditor::_update_mode), CONNECT_DEFERRED);
 
 	tool_connect = memnew(Button);
-	tool_connect->set_theme_type_variation("FlatButton");
+	tool_connect->set_theme_type_variation(SceneStringName(FlatButton));
 	top_hb->add_child(tool_connect);
 	tool_connect->set_toggle_mode(true);
 	tool_connect->set_button_group(bg);
@@ -1851,7 +1846,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	selection_tools_hb->add_child(memnew(VSeparator));
 
 	tool_erase = memnew(Button);
-	tool_erase->set_theme_type_variation("FlatButton");
+	tool_erase->set_theme_type_variation(SceneStringName(FlatButton));
 	tool_erase->set_tooltip_text(TTR("Remove selected node or transition."));
 	tool_erase->connect(SceneStringName(pressed), callable_mp(this, &AnimationNodeStateMachineEditor::_erase_selected).bind(false));
 	tool_erase->set_disabled(true);
@@ -1866,7 +1861,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	transition_tools_hb->add_child(switch_mode);
 
 	auto_advance = memnew(Button);
-	auto_advance->set_theme_type_variation("FlatButton");
+	auto_advance->set_theme_type_variation(SceneStringName(FlatButton));
 	auto_advance->set_tooltip_text(TTR("New Transitions Should Auto Advance"));
 	auto_advance->set_toggle_mode(true);
 	auto_advance->set_pressed(true);

@@ -124,7 +124,7 @@ TEST_SUITE("[TextServer]") {
 				RID font1 = ts->create_font();
 				ts->font_set_data_ptr(font1, _font_NotoSans_Regular, _font_NotoSans_Regular_size);
 				RID font2 = ts->create_font();
-				ts->font_set_data_ptr(font2, _font_NotoNaskhArabicUI_Regular, _font_NotoNaskhArabicUI_Regular_size);
+				ts->font_set_data_ptr(font2, _font_Vazirmatn_Regular, _font_Vazirmatn_Regular_size);
 
 				Array font;
 				font.push_back(font1);
@@ -180,7 +180,7 @@ TEST_SUITE("[TextServer]") {
 				ts->font_set_data_ptr(font2, _font_NotoSansThai_Regular, _font_NotoSansThai_Regular_size);
 				ts->font_set_allow_system_fallback(font2, false);
 				RID font3 = ts->create_font();
-				ts->font_set_data_ptr(font3, _font_NotoNaskhArabicUI_Regular, _font_NotoNaskhArabicUI_Regular_size);
+				ts->font_set_data_ptr(font3, _font_Vazirmatn_Regular, _font_Vazirmatn_Regular_size);
 				ts->font_set_allow_system_fallback(font3, false);
 
 				Array font;
@@ -461,7 +461,7 @@ TEST_SUITE("[TextServer]") {
 					ts->free_rid(ctx);
 				}
 
-				if (ts->has_feature(TextServer::FEATURE_BREAK_ITERATORS)) {
+				if (ts->has_feature(TextServer::FEATURE_BREAK_ITERATORS)) { // Line breaking opportunities.
 					String test = U"เป็นภาษาราชการและภาษา";
 					RID ctx = ts->create_shaped_text();
 					CHECK_FALSE_MESSAGE(ctx == RID(), "Creating text buffer failed.");
@@ -489,7 +489,7 @@ TEST_SUITE("[TextServer]") {
 					ts->free_rid(ctx);
 				}
 
-				if (ts->has_feature(TextServer::FEATURE_BREAK_ITERATORS)) {
+				if (ts->has_feature(TextServer::FEATURE_BREAK_ITERATORS)) { // Break line.
 					struct TestCase {
 						String text;
 						PackedInt32Array breaks;
@@ -503,16 +503,49 @@ TEST_SUITE("[TextServer]") {
 						{ U"         มีอุปกรณ์\nนี้", { 0, 11, 11, 19, 19, 22 } },
 						{ U"الحمدا لحمدا لحمـــد", { 0, 13, 13, 20 } },
 						{ U"         الحمد test", { 0, 15, 15, 19 } },
-						{ U"الحمـد الرياضي العربي", { 0, 7, 7, 21 } },
+						{ U"الحمـد الرياضي العربي", { 0, 7, 7, 15, 15, 21 } },
+						{ U"test \rtest", { 0, 6, 6, 10 } },
+						{ U"test\r test", { 0, 5, 5, 10 } },
+						{ U"test\r test \r test", { 0, 5, 5, 12, 12, 17 } },
 					};
 					for (size_t j = 0; j < sizeof(cases) / sizeof(TestCase); j++) {
 						RID ctx = ts->create_shaped_text();
 						CHECK_FALSE_MESSAGE(ctx == RID(), "Creating text buffer failed.");
 						bool ok = ts->shaped_text_add_string(ctx, cases[j].text, font, 16);
 						CHECK_FALSE_MESSAGE(!ok, "Adding text to the buffer failed.");
-						PackedInt32Array breaks = ts->shaped_text_get_line_breaks(ctx, 90.0);
 
+						PackedInt32Array breaks = ts->shaped_text_get_line_breaks(ctx, 90.0);
 						CHECK_FALSE_MESSAGE(breaks != cases[j].breaks, "Invalid break points.");
+
+						breaks = ts->shaped_text_get_line_breaks_adv(ctx, { 90.0 }, 0, false);
+						CHECK_FALSE_MESSAGE(breaks != cases[j].breaks, "Invalid break points.");
+
+						ts->free_rid(ctx);
+					}
+				}
+
+				if (ts->has_feature(TextServer::FEATURE_BREAK_ITERATORS)) { // Break line and trim spaces.
+					struct TestCase {
+						String text;
+						PackedInt32Array breaks;
+					};
+					TestCase cases[] = {
+						{ U"test \rtest", { 0, 4, 6, 10 } },
+						{ U"test\r test", { 0, 4, 6, 10 } },
+						{ U"test\r test \r test", { 0, 4, 6, 10, 13, 17 } },
+					};
+					for (size_t j = 0; j < sizeof(cases) / sizeof(TestCase); j++) {
+						RID ctx = ts->create_shaped_text();
+						CHECK_FALSE_MESSAGE(ctx == RID(), "Creating text buffer failed.");
+						bool ok = ts->shaped_text_add_string(ctx, cases[j].text, font, 16);
+						CHECK_FALSE_MESSAGE(!ok, "Adding text to the buffer failed.");
+
+						PackedInt32Array breaks = ts->shaped_text_get_line_breaks(ctx, 90.0, 0, TextServer::BREAK_MANDATORY | TextServer::BREAK_WORD_BOUND | TextServer::BREAK_TRIM_EDGE_SPACES);
+						CHECK_FALSE_MESSAGE(breaks != cases[j].breaks, "Invalid break points.");
+
+						breaks = ts->shaped_text_get_line_breaks_adv(ctx, { 90.0 }, 0, false, TextServer::BREAK_MANDATORY | TextServer::BREAK_WORD_BOUND | TextServer::BREAK_TRIM_EDGE_SPACES);
+						CHECK_FALSE_MESSAGE(breaks != cases[j].breaks, "Invalid break points.");
+
 						ts->free_rid(ctx);
 					}
 				}
@@ -584,7 +617,7 @@ TEST_SUITE("[TextServer]") {
 				RID font1 = ts->create_font();
 				ts->font_set_data_ptr(font1, _font_NotoSans_Regular, _font_NotoSans_Regular_size);
 				RID font2 = ts->create_font();
-				ts->font_set_data_ptr(font2, _font_NotoNaskhArabicUI_Regular, _font_NotoNaskhArabicUI_Regular_size);
+				ts->font_set_data_ptr(font2, _font_Vazirmatn_Regular, _font_Vazirmatn_Regular_size);
 
 				Array font;
 				font.push_back(font1);

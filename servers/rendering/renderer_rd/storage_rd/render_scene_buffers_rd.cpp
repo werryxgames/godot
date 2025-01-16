@@ -31,8 +31,6 @@
 #include "render_scene_buffers_rd.h"
 #include "render_scene_buffers_rd.compat.inc"
 
-#include "core/config/project_settings.h"
-#include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 
 RenderSceneBuffersRD::RenderSceneBuffersRD() {
@@ -104,7 +102,7 @@ void RenderSceneBuffersRD::free_named_texture(NamedTexture &p_named_texture) {
 void RenderSceneBuffersRD::update_samplers() {
 	float computed_mipmap_bias = texture_mipmap_bias;
 
-	if (use_taa || (scaling_3d_mode == RS::VIEWPORT_SCALING_3D_MODE_FSR2)) {
+	if (use_taa || (RS::scaling_3d_mode_type(scaling_3d_mode) == RS::VIEWPORT_SCALING_3D_TYPE_TEMPORAL)) {
 		// Use negative mipmap LOD bias when TAA or FSR2 is enabled to compensate for loss of sharpness.
 		// This restores sharpness in still images to be roughly at the same level as without TAA,
 		// but moving scenes will still be blurrier.
@@ -119,7 +117,7 @@ void RenderSceneBuffersRD::update_samplers() {
 
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	material_storage->samplers_rd_free(samplers);
-	samplers = material_storage->samplers_rd_allocate(computed_mipmap_bias);
+	samplers = material_storage->samplers_rd_allocate(computed_mipmap_bias, anisotropic_filtering_level);
 }
 
 void RenderSceneBuffersRD::cleanup() {
@@ -141,6 +139,13 @@ void RenderSceneBuffersRD::cleanup() {
 			weight_buffer.weight = RID();
 		}
 	}
+
+#ifdef METAL_ENABLED
+	if (mfx_spatial_context) {
+		memdelete(mfx_spatial_context);
+		mfx_spatial_context = nullptr;
+	}
+#endif
 }
 
 void RenderSceneBuffersRD::configure(const RenderSceneBuffersConfiguration *p_config) {
@@ -157,6 +162,7 @@ void RenderSceneBuffersRD::configure(const RenderSceneBuffersConfiguration *p_co
 
 	fsr_sharpness = p_config->get_fsr_sharpness();
 	texture_mipmap_bias = p_config->get_texture_mipmap_bias();
+	anisotropic_filtering_level = p_config->get_anisotropic_filtering_level();
 	use_taa = p_config->get_use_taa();
 	use_debanding = p_config->get_use_debanding();
 
@@ -170,6 +176,9 @@ void RenderSceneBuffersRD::configure(const RenderSceneBuffersConfiguration *p_co
 	// Create our color buffer.
 	const bool resolve_target = msaa_3d != RS::VIEWPORT_MSAA_DISABLED;
 	create_texture(RB_SCOPE_BUFFERS, RB_TEX_COLOR, base_data_format, get_color_usage_bits(resolve_target, false, can_be_storage));
+
+	// TODO: Detect when it is safe to use RD::TEXTURE_USAGE_TRANSIENT_BIT for RB_TEX_DEPTH, RB_TEX_COLOR_MSAA and/or RB_TEX_DEPTH_MSAA.
+	// (it means we cannot sample from it, we cannot copy from/to it) to save VRAM (and maybe performance too).
 
 	// Create our depth buffer.
 	create_texture(RB_SCOPE_BUFFERS, RB_TEX_DEPTH, get_depth_format(resolve_target, false, can_be_storage), get_depth_usage_bits(resolve_target, false, can_be_storage));
@@ -230,9 +239,31 @@ void RenderSceneBuffersRD::set_texture_mipmap_bias(float p_texture_mipmap_bias) 
 	update_samplers();
 }
 
+void RenderSceneBuffersRD::set_anisotropic_filtering_level(RS::ViewportAnisotropicFiltering p_anisotropic_filtering_level) {
+	anisotropic_filtering_level = p_anisotropic_filtering_level;
+
+	update_samplers();
+}
+
 void RenderSceneBuffersRD::set_use_debanding(bool p_use_debanding) {
 	use_debanding = p_use_debanding;
 }
+
+#ifdef METAL_ENABLED
+void RenderSceneBuffersRD::ensure_mfx(RendererRD::MFXSpatialEffect *p_effect) {
+	if (mfx_spatial_context) {
+		return;
+	}
+	RendererRD::MFXSpatialEffect::CreateParams params = {
+		.input_size = internal_size,
+		.output_size = target_size,
+		.input_format = base_data_format,
+		.output_format = RD::DATA_FORMAT_R8G8B8A8_UNORM,
+	};
+
+	mfx_spatial_context = p_effect->create_context(params);
+}
+#endif
 
 // Named textures
 
@@ -473,7 +504,7 @@ void RenderSceneBuffersRD::allocate_blur_textures() {
 	}
 
 	Size2i blur_size = internal_size;
-	if (scaling_3d_mode == RS::VIEWPORT_SCALING_3D_MODE_FSR2) {
+	if (RS::scaling_3d_mode_type(scaling_3d_mode) == RS::VIEWPORT_SCALING_3D_TYPE_TEMPORAL) {
 		// The blur texture should be as big as the target size when using an upscaler.
 		blur_size = target_size;
 	}

@@ -1446,7 +1446,11 @@ Ref<Image> TextureStorage::texture_2d_get(RID p_texture) const {
 		image = Image::create_from_data(tex->width, tex->height, tex->mipmaps > 1, tex->validated_format, data);
 	}
 
-	ERR_FAIL_COND_V(image->is_empty(), Ref<Image>());
+	if (image->is_empty()) {
+		const String &path_str = tex->path.is_empty() ? "with no path" : vformat("with path '%s'", tex->path);
+		ERR_FAIL_V_MSG(Ref<Image>(), vformat("Texture %s has no data.", path_str));
+	}
+
 	if (tex->format != tex->validated_format) {
 		image->convert(tex->format);
 	}
@@ -1467,7 +1471,10 @@ Ref<Image> TextureStorage::texture_2d_layer_get(RID p_texture, int p_layer) cons
 	Vector<uint8_t> data = RD::get_singleton()->texture_get_data(tex->rd_texture, p_layer);
 	ERR_FAIL_COND_V(data.is_empty(), Ref<Image>());
 	Ref<Image> image = Image::create_from_data(tex->width, tex->height, tex->mipmaps > 1, tex->validated_format, data);
-	ERR_FAIL_COND_V(image->is_empty(), Ref<Image>());
+	if (image->is_empty()) {
+		const String &path_str = tex->path.is_empty() ? "with no path" : vformat("with path '%s'", tex->path);
+		ERR_FAIL_V_MSG(Ref<Image>(), vformat("Texture %s has no data.", path_str));
+	}
 	if (tex->format != tex->validated_format) {
 		image->convert(tex->format);
 	}
@@ -1494,6 +1501,10 @@ Vector<Ref<Image>> TextureStorage::texture_3d_get(RID p_texture) const {
 
 		Ref<Image> img = Image::create_from_data(bs.size.width, bs.size.height, false, tex->validated_format, sub_region);
 		ERR_FAIL_COND_V(img->is_empty(), Vector<Ref<Image>>());
+		if (img->is_empty()) {
+			const String &path_str = tex->path.is_empty() ? "with no path" : vformat("with path '%s'", tex->path);
+			ERR_FAIL_V_MSG(Vector<Ref<Image>>(), vformat("Texture %s has no data.", path_str));
+		}
 		if (tex->format != tex->validated_format) {
 			img->convert(tex->format);
 		}
@@ -2174,10 +2185,15 @@ Ref<Image> TextureStorage::_validate_texture_format(const Ref<Image> &p_image, T
 				}
 			} else {
 				//not supported, reconvert
-				r_format.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
-				r_format.format_srgb = RD::DATA_FORMAT_R8G8B8A8_SRGB;
 				image->decompress();
-				image->convert(Image::FORMAT_RGBA8);
+				if (p_image->get_format() == Image::FORMAT_ASTC_4x4) {
+					r_format.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+					r_format.format_srgb = RD::DATA_FORMAT_R8G8B8A8_SRGB;
+					image->convert(Image::FORMAT_RGBA8);
+				} else {
+					r_format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+					image->convert(Image::FORMAT_RGBAH);
+				}
 			}
 			r_format.swizzle_r = RD::TEXTURE_SWIZZLE_R;
 			r_format.swizzle_g = RD::TEXTURE_SWIZZLE_G;
@@ -2194,10 +2210,15 @@ Ref<Image> TextureStorage::_validate_texture_format(const Ref<Image> &p_image, T
 				}
 			} else {
 				//not supported, reconvert
-				r_format.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
-				r_format.format_srgb = RD::DATA_FORMAT_R8G8B8A8_SRGB;
 				image->decompress();
-				image->convert(Image::FORMAT_RGBA8);
+				if (p_image->get_format() == Image::FORMAT_ASTC_8x8) {
+					r_format.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+					r_format.format_srgb = RD::DATA_FORMAT_R8G8B8A8_SRGB;
+					image->convert(Image::FORMAT_RGBA8);
+				} else {
+					r_format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+					image->convert(Image::FORMAT_RGBAH);
+				}
 			}
 			r_format.swizzle_r = RD::TEXTURE_SWIZZLE_R;
 			r_format.swizzle_g = RD::TEXTURE_SWIZZLE_G;
@@ -3436,7 +3457,7 @@ RID TextureStorage::render_target_get_texture(RID p_render_target) {
 	return rt->texture;
 }
 
-void TextureStorage::render_target_set_override(RID p_render_target, RID p_color_texture, RID p_depth_texture, RID p_velocity_texture) {
+void TextureStorage::render_target_set_override(RID p_render_target, RID p_color_texture, RID p_depth_texture, RID p_velocity_texture, RID p_velocity_depth_texture) {
 	RenderTarget *rt = render_target_owner.get_or_null(p_render_target);
 	ERR_FAIL_NULL(rt);
 
@@ -3502,6 +3523,20 @@ RID TextureStorage::render_target_get_override_velocity_slice(RID p_render_targe
 
 		return rt->overridden.cached_slices[key];
 	}
+}
+
+void RendererRD::TextureStorage::render_target_set_render_region(RID p_render_target, const Rect2i &p_render_region) {
+	RenderTarget *rt = render_target_owner.get_or_null(p_render_target);
+	ERR_FAIL_NULL(rt);
+
+	rt->render_region = p_render_region;
+}
+
+Rect2i RendererRD::TextureStorage::render_target_get_render_region(RID p_render_target) const {
+	RenderTarget *rt = render_target_owner.get_or_null(p_render_target);
+	ERR_FAIL_NULL_V(rt, Rect2i());
+
+	return rt->render_region;
 }
 
 void TextureStorage::render_target_set_transparent(RID p_render_target, bool p_is_transparent) {

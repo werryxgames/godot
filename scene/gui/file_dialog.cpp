@@ -32,7 +32,6 @@
 
 #include "core/config/project_settings.h"
 #include "core/os/keyboard.h"
-#include "core/string/print_string.h"
 #include "scene/gui/check_box.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
@@ -398,7 +397,17 @@ void FileDialog::update_dir() {
 }
 
 void FileDialog::_dir_submitted(String p_dir) {
-	_change_dir(root_prefix.path_join(p_dir));
+	String new_dir = p_dir;
+#ifdef WINDOWS_ENABLED
+	if (root_prefix.is_empty() && drives->is_visible() && !new_dir.is_network_share_path() && new_dir.is_absolute_path() && new_dir.find(":/") == -1 && new_dir.find(":\\") == -1) {
+		// Non network path without X:/ prefix on Windows, add drive letter.
+		new_dir = drives->get_item_text(drives->get_selected()).path_join(new_dir);
+	}
+#endif
+	if (!root_prefix.is_empty()) {
+		new_dir = root_prefix.path_join(new_dir);
+	}
+	_change_dir(new_dir);
 	file->set_text("");
 	_push_history();
 }
@@ -949,50 +958,83 @@ void FileDialog::update_filters() {
 
 	if (filters.size() > 1) {
 		String all_filters;
+		String all_mime;
 		String all_filters_full;
+		String all_mime_full;
 
 		const int max_filters = 5;
 
+		// "All Recognized" display name.
 		for (int i = 0; i < MIN(max_filters, filters.size()); i++) {
 			String flt = filters[i].get_slicec(';', 0).strip_edges();
-			if (i > 0) {
+			if (!all_filters.is_empty() && !flt.is_empty()) {
 				all_filters += ", ";
 			}
 			all_filters += flt;
+
+			String mime = filters[i].get_slicec(';', 2).strip_edges();
+			if (!all_mime.is_empty() && !mime.is_empty()) {
+				all_mime += ", ";
+			}
+			all_mime += mime;
 		}
+
+		// "All Recognized" filter.
 		for (int i = 0; i < filters.size(); i++) {
 			String flt = filters[i].get_slicec(';', 0).strip_edges();
-			if (i > 0) {
+			if (!all_filters_full.is_empty() && !flt.is_empty()) {
 				all_filters_full += ",";
 			}
 			all_filters_full += flt;
+
+			String mime = filters[i].get_slicec(';', 2).strip_edges();
+			if (!all_mime_full.is_empty() && !mime.is_empty()) {
+				all_mime_full += ",";
+			}
+			all_mime_full += mime;
 		}
+
+		String native_all_name;
+		if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_NATIVE_DIALOG_FILE_MIME)) {
+			native_all_name += all_filters;
+		}
+		if (!native_all_name.is_empty()) {
+			native_all_name += ", ";
+		}
+		native_all_name += all_mime;
 
 		if (max_filters < filters.size()) {
 			all_filters += ", ...";
+			native_all_name += ", ...";
 		}
 
-		String f = atr(ETR("All Recognized")) + " (" + all_filters + ")";
-		filter->add_item(f);
-		processed_filters.push_back(all_filters_full + ";" + f);
+		filter->add_item(atr(ETR("All Recognized")) + " (" + all_filters + ")");
+		processed_filters.push_back(all_filters_full + ";" + atr(ETR("All Recognized")) + " (" + native_all_name + ")" + ";" + all_mime_full);
 	}
 	for (int i = 0; i < filters.size(); i++) {
 		String flt = filters[i].get_slicec(';', 0).strip_edges();
-		String desc = filters[i].get_slice(";", 1).strip_edges();
-		if (desc.length()) {
-			String f = atr(desc) + " (" + flt + ")";
-			filter->add_item(f);
-			processed_filters.push_back(flt + ";" + f);
+		String desc = filters[i].get_slicec(';', 1).strip_edges();
+		String mime = filters[i].get_slicec(';', 2).strip_edges();
+		String native_name;
+		if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_NATIVE_DIALOG_FILE_MIME)) {
+			native_name += flt;
+		}
+		if (!native_name.is_empty() && !mime.is_empty()) {
+			native_name += ", ";
+		}
+		native_name += mime;
+		if (!desc.is_empty()) {
+			filter->add_item(atr(desc) + " (" + flt + ")");
+			processed_filters.push_back(flt + ";" + atr(desc) + " (" + native_name + ");" + mime);
 		} else {
-			String f = "(" + flt + ")";
-			filter->add_item(f);
-			processed_filters.push_back(flt + ";" + f);
+			filter->add_item("(" + flt + ")");
+			processed_filters.push_back(flt + ";(" + native_name + ");" + mime);
 		}
 	}
 
 	String f = atr(ETR("All Files")) + " (*.*)";
 	filter->add_item(f);
-	processed_filters.push_back("*.*;" + f);
+	processed_filters.push_back("*.*;" + f + ";application/octet-stream");
 }
 
 void FileDialog::clear_filename_filter() {
@@ -1639,13 +1681,13 @@ FileDialog::FileDialog() {
 	HBoxContainer *hbc = memnew(HBoxContainer);
 
 	dir_prev = memnew(Button);
-	dir_prev->set_theme_type_variation("FlatButton");
+	dir_prev->set_theme_type_variation(SceneStringName(FlatButton));
 	dir_prev->set_tooltip_text(ETR("Go to previous folder."));
 	dir_next = memnew(Button);
-	dir_next->set_theme_type_variation("FlatButton");
+	dir_next->set_theme_type_variation(SceneStringName(FlatButton));
 	dir_next->set_tooltip_text(ETR("Go to next folder."));
 	dir_up = memnew(Button);
-	dir_up->set_theme_type_variation("FlatButton");
+	dir_up->set_theme_type_variation(SceneStringName(FlatButton));
 	dir_up->set_tooltip_text(ETR("Go to parent folder."));
 	hbc->add_child(dir_prev);
 	hbc->add_child(dir_next);
@@ -1669,13 +1711,13 @@ FileDialog::FileDialog() {
 	dir->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
 	refresh = memnew(Button);
-	refresh->set_theme_type_variation("FlatButton");
+	refresh->set_theme_type_variation(SceneStringName(FlatButton));
 	refresh->set_tooltip_text(ETR("Refresh files."));
 	refresh->connect(SceneStringName(pressed), callable_mp(this, &FileDialog::update_file_list));
 	hbc->add_child(refresh);
 
 	show_hidden = memnew(Button);
-	show_hidden->set_theme_type_variation("FlatButton");
+	show_hidden->set_theme_type_variation(SceneStringName(FlatButton));
 	show_hidden->set_toggle_mode(true);
 	show_hidden->set_pressed(is_showing_hidden_files());
 	show_hidden->set_tooltip_text(ETR("Toggle the visibility of hidden files."));
@@ -1683,7 +1725,7 @@ FileDialog::FileDialog() {
 	hbc->add_child(show_hidden);
 
 	show_filename_filter_button = memnew(Button);
-	show_filename_filter_button->set_theme_type_variation("FlatButton");
+	show_filename_filter_button->set_theme_type_variation(SceneStringName(FlatButton));
 	show_filename_filter_button->set_toggle_mode(true);
 	show_filename_filter_button->set_pressed(false);
 	show_filename_filter_button->set_tooltip_text(RTR("Toggle the visibility of the filter for file names."));
@@ -1694,7 +1736,7 @@ FileDialog::FileDialog() {
 	hbc->add_child(shortcuts_container);
 
 	makedir = memnew(Button);
-	makedir->set_theme_type_variation("FlatButton");
+	makedir->set_theme_type_variation(SceneStringName(FlatButton));
 	makedir->set_tooltip_text(ETR("Create a new folder."));
 	makedir->connect(SceneStringName(pressed), callable_mp(this, &FileDialog::_make_dir));
 	hbc->add_child(makedir);

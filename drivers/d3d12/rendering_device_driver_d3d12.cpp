@@ -905,6 +905,11 @@ void RenderingDeviceDriverD3D12::buffer_unmap(BufferID p_buffer) {
 	buf_info->resource->Unmap(0, &VOID_RANGE);
 }
 
+uint64_t RenderingDeviceDriverD3D12::buffer_get_device_address(BufferID p_buffer) {
+	const BufferInfo *buf_info = (const BufferInfo *)p_buffer.id;
+	return buf_info->resource->GetGPUVirtualAddress();
+}
+
 /*****************/
 /**** TEXTURE ****/
 /*****************/
@@ -1660,7 +1665,7 @@ bool RenderingDeviceDriverD3D12::texture_can_make_shared_with_format(TextureID p
 /**** SAMPLER ****/
 /*****************/
 
-static const D3D12_TEXTURE_ADDRESS_MODE RD_REPEAT_MODE_TO_D3D12_ADDRES_MODE[RDD::SAMPLER_REPEAT_MODE_MAX] = {
+static const D3D12_TEXTURE_ADDRESS_MODE RD_REPEAT_MODE_TO_D3D12_ADDRESS_MODE[RDD::SAMPLER_REPEAT_MODE_MAX] = {
 	D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 	D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
 	D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -1715,9 +1720,9 @@ RDD::SamplerID RenderingDeviceDriverD3D12::sampler_create(const SamplerState &p_
 				p_state.enable_compare ? D3D12_FILTER_REDUCTION_TYPE_COMPARISON : D3D12_FILTER_REDUCTION_TYPE_STANDARD);
 	}
 
-	sampler_desc.AddressU = RD_REPEAT_MODE_TO_D3D12_ADDRES_MODE[p_state.repeat_u];
-	sampler_desc.AddressV = RD_REPEAT_MODE_TO_D3D12_ADDRES_MODE[p_state.repeat_v];
-	sampler_desc.AddressW = RD_REPEAT_MODE_TO_D3D12_ADDRES_MODE[p_state.repeat_w];
+	sampler_desc.AddressU = RD_REPEAT_MODE_TO_D3D12_ADDRESS_MODE[p_state.repeat_u];
+	sampler_desc.AddressV = RD_REPEAT_MODE_TO_D3D12_ADDRESS_MODE[p_state.repeat_v];
+	sampler_desc.AddressW = RD_REPEAT_MODE_TO_D3D12_ADDRESS_MODE[p_state.repeat_w];
 
 	for (int i = 0; i < 4; i++) {
 		sampler_desc.BorderColor[i] = RD_TO_D3D12_SAMPLER_BORDER_COLOR[p_state.border_color][i];
@@ -2286,8 +2291,25 @@ RDD::CommandPoolID RenderingDeviceDriverD3D12::command_pool_create(CommandQueueF
 	return CommandPoolID(command_pool);
 }
 
+bool RenderingDeviceDriverD3D12::command_pool_reset(CommandPoolID p_cmd_pool) {
+	return true;
+}
+
 void RenderingDeviceDriverD3D12::command_pool_free(CommandPoolID p_cmd_pool) {
 	CommandPoolInfo *command_pool = (CommandPoolInfo *)(p_cmd_pool.id);
+
+	// Destroy all command buffers associated with this command pool, mirroring Vulkan's behavior.
+	SelfList<CommandBufferInfo> *cmd_buf_elem = command_pool->command_buffers.first();
+	while (cmd_buf_elem != nullptr) {
+		CommandBufferInfo *cmd_buf_info = cmd_buf_elem->self();
+		cmd_buf_elem = cmd_buf_elem->next();
+
+		cmd_buf_info->cmd_list.Reset();
+		cmd_buf_info->cmd_allocator.Reset();
+
+		VersatileResource::free(resources_allocator, cmd_buf_info);
+	}
+
 	memdelete(command_pool);
 }
 
@@ -2296,7 +2318,7 @@ void RenderingDeviceDriverD3D12::command_pool_free(CommandPoolID p_cmd_pool) {
 RDD::CommandBufferID RenderingDeviceDriverD3D12::command_buffer_create(CommandPoolID p_cmd_pool) {
 	DEV_ASSERT(p_cmd_pool);
 
-	const CommandPoolInfo *command_pool = (CommandPoolInfo *)(p_cmd_pool.id);
+	CommandPoolInfo *command_pool = (CommandPoolInfo *)(p_cmd_pool.id);
 	D3D12_COMMAND_LIST_TYPE list_type;
 	if (command_pool->buffer_type == COMMAND_BUFFER_TYPE_SECONDARY) {
 		list_type = D3D12_COMMAND_LIST_TYPE_BUNDLE;
@@ -2331,6 +2353,9 @@ RDD::CommandBufferID RenderingDeviceDriverD3D12::command_buffer_create(CommandPo
 	CommandBufferInfo *cmd_buf_info = VersatileResource::allocate<CommandBufferInfo>(resources_allocator);
 	cmd_buf_info->cmd_allocator = cmd_allocator;
 	cmd_buf_info->cmd_list = cmd_list;
+
+	// Add this command buffer to the command pool's list of command buffers.
+	command_pool->command_buffers.add(&cmd_buf_info->command_buffer_info_elem);
 
 	return CommandBufferID(cmd_buf_info);
 }
@@ -3616,7 +3641,7 @@ Vector<uint8_t> RenderingDeviceDriverD3D12::shader_compile_binary_from_spirv(Vec
 	return ret;
 }
 
-RDD::ShaderID RenderingDeviceDriverD3D12::shader_create_from_bytecode(const Vector<uint8_t> &p_shader_binary, ShaderDescription &r_shader_desc, String &r_name) {
+RDD::ShaderID RenderingDeviceDriverD3D12::shader_create_from_bytecode(const Vector<uint8_t> &p_shader_binary, ShaderDescription &r_shader_desc, String &r_name, const Vector<ImmutableSampler> &p_immutable_samplers) {
 	r_shader_desc = {}; // Driver-agnostic.
 	ShaderInfo shader_info_in; // Driver-specific.
 
@@ -3791,7 +3816,7 @@ void RenderingDeviceDriverD3D12::shader_destroy_modules(ShaderID p_shader) {
 /**** UNIFORM SET ****/
 /*********************/
 
-static void _add_descriptor_count_for_uniform(RenderingDevice::UniformType p_type, uint32_t p_binding_length, bool p_dobule_srv_uav_ambiguous, uint32_t &r_num_resources, uint32_t &r_num_samplers, bool &r_srv_uav_ambiguity) {
+static void _add_descriptor_count_for_uniform(RenderingDevice::UniformType p_type, uint32_t p_binding_length, bool p_double_srv_uav_ambiguous, uint32_t &r_num_resources, uint32_t &r_num_samplers, bool &r_srv_uav_ambiguity) {
 	r_srv_uav_ambiguity = false;
 
 	// Some resource types can be SRV or UAV, depending on what NIR-DXIL decided for a specific shader variant.
@@ -3812,11 +3837,11 @@ static void _add_descriptor_count_for_uniform(RenderingDevice::UniformType p_typ
 			r_num_resources += 1;
 		} break;
 		case RenderingDevice::UNIFORM_TYPE_STORAGE_BUFFER: {
-			r_num_resources += p_dobule_srv_uav_ambiguous ? 2 : 1;
+			r_num_resources += p_double_srv_uav_ambiguous ? 2 : 1;
 			r_srv_uav_ambiguity = true;
 		} break;
 		case RenderingDevice::UNIFORM_TYPE_IMAGE: {
-			r_num_resources += p_binding_length * (p_dobule_srv_uav_ambiguous ? 2 : 1);
+			r_num_resources += p_binding_length * (p_double_srv_uav_ambiguous ? 2 : 1);
 			r_srv_uav_ambiguity = true;
 		} break;
 		default: {
@@ -3825,7 +3850,9 @@ static void _add_descriptor_count_for_uniform(RenderingDevice::UniformType p_typ
 	}
 }
 
-RDD::UniformSetID RenderingDeviceDriverD3D12::uniform_set_create(VectorView<BoundUniform> p_uniforms, ShaderID p_shader, uint32_t p_set_index) {
+RDD::UniformSetID RenderingDeviceDriverD3D12::uniform_set_create(VectorView<BoundUniform> p_uniforms, ShaderID p_shader, uint32_t p_set_index, int p_linear_pool_index) {
+	//p_linear_pool_index = -1; // TODO:? Linear pools not implemented or not supported by API backend.
+
 	// Pre-bookkeep.
 	UniformSetInfo *uniform_set_info = VersatileResource::allocate<UniformSetInfo>(resources_allocator);
 
@@ -5352,6 +5379,13 @@ void RenderingDeviceDriverD3D12::command_bind_render_uniform_set(CommandBufferID
 	_command_bind_uniform_set(p_cmd_buffer, p_uniform_set, p_shader, p_set_index, false);
 }
 
+void RenderingDeviceDriverD3D12::command_bind_render_uniform_sets(CommandBufferID p_cmd_buffer, VectorView<UniformSetID> p_uniform_sets, ShaderID p_shader, uint32_t p_first_set_index, uint32_t p_set_count) {
+	for (uint32_t i = 0u; i < p_set_count; ++i) {
+		// TODO: _command_bind_uniform_set() does WAAAAY too much stuff. A lot of it should be already cached in UniformSetID when uniform_set_create() was called. Binding is supposed to be a cheap operation, ideally a memcpy.
+		_command_bind_uniform_set(p_cmd_buffer, p_uniform_sets[i], p_shader, p_first_set_index + i, false);
+	}
+}
+
 void RenderingDeviceDriverD3D12::command_render_draw(CommandBufferID p_cmd_buffer, uint32_t p_vertex_count, uint32_t p_instance_count, uint32_t p_base_vertex, uint32_t p_first_instance) {
 	CommandBufferInfo *cmd_buf_info = (CommandBufferInfo *)p_cmd_buffer.id;
 	_bind_vertex_buffers(cmd_buf_info);
@@ -5856,6 +5890,13 @@ void RenderingDeviceDriverD3D12::command_bind_compute_uniform_set(CommandBufferI
 	_command_bind_uniform_set(p_cmd_buffer, p_uniform_set, p_shader, p_set_index, true);
 }
 
+void RenderingDeviceDriverD3D12::command_bind_compute_uniform_sets(CommandBufferID p_cmd_buffer, VectorView<UniformSetID> p_uniform_sets, ShaderID p_shader, uint32_t p_first_set_index, uint32_t p_set_count) {
+	for (uint32_t i = 0u; i < p_set_count; ++i) {
+		// TODO: _command_bind_uniform_set() does WAAAAY too much stuff. A lot of it should be already cached in UniformSetID when uniform_set_create() was called. Binding is supposed to be a cheap operation, ideally a memcpy.
+		_command_bind_uniform_set(p_cmd_buffer, p_uniform_sets[i], p_shader, p_first_set_index + i, true);
+	}
+}
+
 void RenderingDeviceDriverD3D12::command_compute_dispatch(CommandBufferID p_cmd_buffer, uint32_t p_x_groups, uint32_t p_y_groups, uint32_t p_z_groups) {
 	CommandBufferInfo *cmd_buf_info = (CommandBufferInfo *)p_cmd_buffer.id;
 	if (!barrier_capabilities.enhanced_barriers_supported) {
@@ -6139,11 +6180,25 @@ uint64_t RenderingDeviceDriverD3D12::get_total_memory_used() {
 	return stats.Total.Stats.BlockBytes;
 }
 
+uint64_t RenderingDeviceDriverD3D12::get_lazily_memory_used() {
+	return 0;
+}
+
 uint64_t RenderingDeviceDriverD3D12::limit_get(Limit p_limit) {
 	uint64_t safe_unbounded = ((uint64_t)1 << 30);
 	switch (p_limit) {
 		case LIMIT_MAX_BOUND_UNIFORM_SETS:
 			return safe_unbounded;
+		case LIMIT_MAX_TEXTURE_ARRAY_LAYERS:
+			return D3D12_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION;
+		case LIMIT_MAX_TEXTURE_SIZE_1D:
+			return D3D12_REQ_TEXTURE1D_U_DIMENSION;
+		case LIMIT_MAX_TEXTURE_SIZE_2D:
+			return D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+		case LIMIT_MAX_TEXTURE_SIZE_3D:
+			return D3D12_REQ_TEXTURE3D_U_V_OR_W_DIMENSION;
+		case LIMIT_MAX_TEXTURE_SIZE_CUBE:
+			return D3D12_REQ_TEXTURECUBE_DIMENSION;
 		case LIMIT_MAX_TEXTURES_PER_SHADER_STAGE:
 			return device_limits.max_srvs_per_shader_stage;
 		case LIMIT_MAX_UNIFORM_BUFFER_SIZE:
@@ -6220,6 +6275,8 @@ bool RenderingDeviceDriverD3D12::has_feature(Features p_feature) {
 		case SUPPORTS_ATTACHMENT_VRS:
 			return vrs_capabilities.ss_image_supported;
 		case SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS:
+			return true;
+		case SUPPORTS_BUFFER_DEVICE_ADDRESS:
 			return true;
 		default:
 			return false;

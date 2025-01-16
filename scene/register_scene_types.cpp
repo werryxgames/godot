@@ -37,6 +37,7 @@
 #include "scene/animation/animation_blend_space_2d.h"
 #include "scene/animation/animation_blend_tree.h"
 #include "scene/animation/animation_mixer.h"
+#include "scene/animation/animation_node_extension.h"
 #include "scene/animation/animation_node_state_machine.h"
 #include "scene/animation/animation_player.h"
 #include "scene/animation/animation_tree.h"
@@ -113,6 +114,8 @@
 #include "scene/resources/bone_map.h"
 #include "scene/resources/camera_attributes.h"
 #include "scene/resources/camera_texture.h"
+#include "scene/resources/canvas_item_material.h"
+#include "scene/resources/color_palette.h"
 #include "scene/resources/compositor.h"
 #include "scene/resources/compressed_texture.h"
 #include "scene/resources/curve_texture.h"
@@ -144,7 +147,6 @@
 #include "scene/resources/style_box_texture.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/syntax_highlighter.h"
-#include "scene/resources/text_file.h"
 #include "scene/resources/text_line.h"
 #include "scene/resources/text_paragraph.h"
 #include "scene/resources/texture.h"
@@ -282,6 +284,11 @@
 #include "scene/3d/skeleton_ik_3d.h"
 #include "scene/3d/skeleton_modifier_3d.h"
 #include "scene/3d/soft_body_3d.h"
+#include "scene/3d/spring_bone_collision_3d.h"
+#include "scene/3d/spring_bone_collision_capsule_3d.h"
+#include "scene/3d/spring_bone_collision_plane_3d.h"
+#include "scene/3d/spring_bone_collision_sphere_3d.h"
+#include "scene/3d/spring_bone_simulator_3d.h"
 #include "scene/3d/sprite_3d.h"
 #include "scene/3d/visible_on_screen_notifier_3d.h"
 #include "scene/3d/voxel_gi.h"
@@ -502,6 +509,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(IntervalTweener);
 	GDREGISTER_CLASS(CallbackTweener);
 	GDREGISTER_CLASS(MethodTweener);
+	GDREGISTER_CLASS(SubtweenTweener);
 
 	GDREGISTER_ABSTRACT_CLASS(AnimationMixer);
 	GDREGISTER_CLASS(AnimationPlayer);
@@ -513,6 +521,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(AnimationNodeBlendSpace2D);
 	GDREGISTER_CLASS(AnimationNodeStateMachine);
 	GDREGISTER_CLASS(AnimationNodeStateMachinePlayback);
+	GDREGISTER_VIRTUAL_CLASS(AnimationNodeExtension);
 
 	GDREGISTER_INTERNAL_CLASS(AnimationNodeStartState);
 	GDREGISTER_INTERNAL_CLASS(AnimationNodeEndState);
@@ -596,6 +605,11 @@ void register_scene_types() {
 	GDREGISTER_CLASS(RootMotionView);
 	GDREGISTER_VIRTUAL_CLASS(SkeletonModifier3D);
 	GDREGISTER_CLASS(RetargetModifier3D);
+	GDREGISTER_CLASS(SpringBoneSimulator3D);
+	GDREGISTER_VIRTUAL_CLASS(SpringBoneCollision3D);
+	GDREGISTER_CLASS(SpringBoneCollisionSphere3D);
+	GDREGISTER_CLASS(SpringBoneCollisionCapsule3D);
+	GDREGISTER_CLASS(SpringBoneCollisionPlane3D);
 
 	OS::get_singleton()->yield(); // may take time to init
 
@@ -969,6 +983,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(FontFile);
 	GDREGISTER_CLASS(FontVariation);
 	GDREGISTER_CLASS(SystemFont);
+	GDREGISTER_CLASS(ColorPalette);
 
 	GDREGISTER_CLASS(Curve);
 

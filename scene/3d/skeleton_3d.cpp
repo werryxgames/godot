@@ -31,9 +31,7 @@
 #include "skeleton_3d.h"
 #include "skeleton_3d.compat.inc"
 
-#include "core/variant/type_info.h"
 #include "scene/3d/skeleton_modifier_3d.h"
-#include "scene/resources/surface_tool.h"
 #ifndef DISABLE_DEPRECATED
 #include "scene/3d/physical_bone_simulator_3d.h"
 #endif // _DISABLE_DEPRECATED
@@ -272,8 +270,6 @@ void Skeleton3D::_update_process_order() const {
 		}
 	}
 
-	bones_backup.resize(bones.size());
-
 	concatenated_bone_names = StringName();
 
 	_update_bones_nested_set();
@@ -329,6 +325,12 @@ void Skeleton3D::_notification(int p_what) {
 			update_flags = UPDATE_FLAG_POSE;
 			_notification(NOTIFICATION_UPDATE_SKELETON);
 		} break;
+#ifdef TOOLS_ENABLED
+		case NOTIFICATION_EDITOR_PRE_SAVE: {
+			force_update_all_dirty_bones();
+			emit_signal(SceneStringName(skeleton_updated));
+		} break;
+#endif // TOOLS_ENABLED
 		case NOTIFICATION_UPDATE_SKELETON: {
 			// Update bone transforms to apply unprocessed poses.
 			force_update_all_dirty_bones();
@@ -341,11 +343,14 @@ void Skeleton3D::_notification(int p_what) {
 			thread_local LocalVector<bool> bone_global_pose_dirty_backup;
 
 			// Process modifiers.
+
+			thread_local LocalVector<BonePoseBackup> bones_backup;
 			_find_modifiers();
 			if (!modifiers.is_empty()) {
+				bones_backup.resize(bones.size());
 				// Store unmodified bone poses.
 				for (uint32_t i = 0; i < bones.size(); i++) {
-					bones_backup[i].save(bones[i]);
+					bones_backup[i].save(bonesptr[i]);
 				}
 				// Store dirty flags for global bone poses.
 				bone_global_pose_dirty_backup = bone_global_pose_dirty;
@@ -608,7 +613,7 @@ uint64_t Skeleton3D::get_version() const {
 }
 
 int Skeleton3D::add_bone(const String &p_name) {
-	ERR_FAIL_COND_V_MSG(p_name.is_empty() || p_name.contains(":") || p_name.contains("/"), -1, vformat("Bone name cannot be empty or contain ':' or '/'.", p_name));
+	ERR_FAIL_COND_V_MSG(p_name.is_empty() || p_name.contains_char(':') || p_name.contains_char('/'), -1, vformat("Bone name cannot be empty or contain ':' or '/'.", p_name));
 	ERR_FAIL_COND_V_MSG(name_to_bone_index.has(p_name), -1, vformat("Skeleton3D \"%s\" already has a bone with name \"%s\".", to_string(), p_name));
 
 	Bone b;

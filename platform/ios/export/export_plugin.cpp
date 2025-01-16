@@ -46,10 +46,8 @@
 #include "editor/plugins/script_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 
-#include "modules/modules_enabled.gen.h" // For mono and svg.
-#ifdef MODULE_SVG_ENABLED
+#include "modules/modules_enabled.gen.h" // For mono.
 #include "modules/svg/image_loader_svg.h"
-#endif
 
 void EditorExportPlatformIOS::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const {
 	// Vulkan and OpenGL ES 3.0 both mandate ETC2 support.
@@ -254,7 +252,15 @@ bool EditorExportPlatformIOS::get_export_option_visibility(const EditorExportPre
 	}
 
 	bool advanced_options_enabled = p_preset->are_advanced_options_enabled();
-	if (p_option.begins_with("privacy") || p_option == "application/generate_simulator_library_if_missing" || (p_option.begins_with("icons/") && !p_option.begins_with("icons/icon") && !p_option.begins_with("icons/app_store"))) {
+	if (p_option.begins_with("privacy") ||
+			p_option == "application/generate_simulator_library_if_missing" ||
+			(p_option.begins_with("icons/") && !p_option.begins_with("icons/icon") && !p_option.begins_with("icons/app_store")) ||
+			p_option == "custom_template/debug" ||
+			p_option == "custom_template/release" ||
+			p_option == "application/additional_plist_content" ||
+			p_option == "application/delete_old_export_files_unconditionally" ||
+			p_option == "application/icon_interpolation" ||
+			p_option == "application/signature") {
 		return advanced_options_enabled;
 	}
 
@@ -2433,7 +2439,7 @@ Error EditorExportPlatformIOS::_export_project_helper(const Ref<EditorExportPres
 	if (p_preset->get("application/generate_simulator_library_if_missing").operator bool()) {
 		String sim_lib_path = dest_dir + String(binary_name + ".xcframework").path_join("ios-arm64_x86_64-simulator").path_join("libgodot.a");
 		String dev_lib_path = dest_dir + String(binary_name + ".xcframework").path_join("ios-arm64").path_join("libgodot.a");
-		String tmp_lib_path = EditorPaths::get_singleton()->get_cache_dir().path_join(binary_name + "_lipo_");
+		String tmp_lib_path = EditorPaths::get_singleton()->get_temp_dir().path_join(binary_name + "_lipo_");
 		uint32_t cputype = 0;
 		uint32_t cpusubtype = 0;
 		if (!_archive_has_arm64(sim_lib_path, &cputype, &cpusubtype) && _archive_has_arm64(dev_lib_path) && FileAccess::exists(dev_lib_path)) {
@@ -3111,19 +3117,19 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 	String id = "tmpexport." + uitos(OS::get_singleton()->get_unix_time());
 
 	Ref<DirAccess> filesystem_da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	ERR_FAIL_COND_V_MSG(filesystem_da.is_null(), ERR_CANT_CREATE, "Cannot create DirAccess for path '" + EditorPaths::get_singleton()->get_cache_dir() + "'.");
-	filesystem_da->make_dir_recursive(EditorPaths::get_singleton()->get_cache_dir().path_join(id));
-	String tmp_export_path = EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.ipa");
+	ERR_FAIL_COND_V_MSG(filesystem_da.is_null(), ERR_CANT_CREATE, "Cannot create DirAccess for path '" + EditorPaths::get_singleton()->get_temp_dir() + "'.");
+	filesystem_da->make_dir_recursive(EditorPaths::get_singleton()->get_temp_dir().path_join(id));
+	String tmp_export_path = EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.ipa");
 
-#define CLEANUP_AND_RETURN(m_err)                                                                           \
-	{                                                                                                       \
-		if (filesystem_da->change_dir(EditorPaths::get_singleton()->get_cache_dir().path_join(id)) == OK) { \
-			filesystem_da->erase_contents_recursive();                                                      \
-			filesystem_da->change_dir("..");                                                                \
-			filesystem_da->remove(id);                                                                      \
-		}                                                                                                   \
-		return m_err;                                                                                       \
-	}                                                                                                       \
+#define CLEANUP_AND_RETURN(m_err)                                                                          \
+	{                                                                                                      \
+		if (filesystem_da->change_dir(EditorPaths::get_singleton()->get_temp_dir().path_join(id)) == OK) { \
+			filesystem_da->erase_contents_recursive();                                                     \
+			filesystem_da->change_dir("..");                                                               \
+			filesystem_da->remove(id);                                                                     \
+		}                                                                                                  \
+		return m_err;                                                                                      \
+	}                                                                                                      \
 	((void)0)
 
 	Device dev = devices[p_device];
@@ -3157,7 +3163,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 	if (p_debug_flags.has_flag(DEBUG_FLAG_REMOTE_DEBUG)) {
 		cmd_args_list.push_back("--remote-debug");
 
-		cmd_args_list.push_back(get_debug_protocol() + host + ":" + String::num(remote_port));
+		cmd_args_list.push_back(get_debug_protocol() + host + ":" + String::num_int64(remote_port));
 
 		List<String> breakpoints;
 		ScriptEditor::get_singleton()->get_breakpoints(&breakpoints);
@@ -3193,7 +3199,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back("simctl");
 			args.push_back("install");
 			args.push_back(dev.id);
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 
 			String log;
 			int ec;
@@ -3246,7 +3252,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back(dev.id);
 			args.push_back("--justlaunch");
 			args.push_back("--bundle");
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 			String app_args;
 			for (const String &E : cmd_args_list) {
 				app_args += E + " ";
@@ -3285,7 +3291,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back("app");
 			args.push_back("-d");
 			args.push_back(dev.id);
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 
 			String log;
 			int ec;
@@ -3341,7 +3347,6 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 
 EditorExportPlatformIOS::EditorExportPlatformIOS() {
 	if (EditorNode::get_singleton()) {
-#ifdef MODULE_SVG_ENABLED
 		Ref<Image> img = memnew(Image);
 		const bool upsample = !Math::is_equal_approx(Math::round(EDSCALE), EDSCALE);
 
@@ -3350,7 +3355,6 @@ EditorExportPlatformIOS::EditorExportPlatformIOS() {
 
 		ImageLoaderSVG::create_image_from_string(img, _ios_run_icon_svg, EDSCALE, upsample, false);
 		run_icon = ImageTexture::create_from_image(img);
-#endif
 
 		plugins_changed.set();
 		devices_changed.set();
